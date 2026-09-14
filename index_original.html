@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Today Tomorrow Weather</title>
+<style>
+  /* 1. 動的背景のためのカラーパレット */
+  :root {
+    color-scheme: dark light;
+    --bg-sunny: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
+    --bg-cloudy: linear-gradient(135deg, #606c88 0%, #3f4c6b 100%);
+    --bg-rainy: linear-gradient(135deg, #141e30 0%, #243b55 100%);
+    --bg-grad: var(--bg-cloudy); /* デフォルト */
+    --fg: #eee;
+    --glass-bg: rgba(20, 20, 20, 0.4);
+    --glass-bd: rgba(255, 255, 255, 0.1);
+    --mut: #aaa;
+    --acc: #4caf50;
+  }
+  
+  body {
+    font-family: system-ui, "Noto Sans JP", sans-serif;
+    background: var(--bg-grad);
+    background-attachment: fixed;
+    color: var(--fg);
+    margin: 14px;
+    line-height: 1.6;
+    transition: background 1s ease; /* 背景切り替えを滑らかに */
+  }
+
+  .card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-bd);
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    margin-bottom: 12px;
+  }
+
+  h1 { margin: 0 0 6px; font-size: 18px; }
+  
+  /* コントロールエリア (エリア選択、GPS、更新) */
+  .controls { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  select, button.icon-btn {
+    background: var(--glass-bg); color: var(--fg); border: 1px solid var(--glass-bd);
+    padding: 8px 12px; border-radius: 8px; font-size: 14px; outline: none;
+  }
+  select { flex: 1; appearance: none; cursor: pointer; }
+  button.icon-btn { cursor: pointer; transition: 0.2s; }
+  button.icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+  /* タブ */
+  .tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tab {
+    flex: 1; text-align: center; padding: 10px; border-radius: 10px;
+    border: 1px solid var(--glass-bd); background: rgba(0,0,0,0.3);
+    color: #ddd; cursor: pointer; transition: all 0.2s ease;
+  }
+  .tab.active { background: var(--acc); color: #fff; border-color: transparent; font-weight: 700; }
+  
+  /* 現在の天気エリア */
+  .now { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .big { font-size: 44px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+  .meta { font-size: 13px; color: var(--mut); }
+  .topline { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .hiLo { font-size: 14px; font-weight: bold; }
+  .hide { display: none !important; }
+
+  /* 1時間・週間リスト */
+  .row {
+    display: flex; justify-content: space-between; gap: 8px; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--glass-bd);
+    opacity: 0; animation: fadeIn 0.4s ease forwards;
+  }
+  .row:last-child { border-bottom: none; }
+  
+  .col-time { width: 44px; text-align: left; font-variant-numeric: tabular-nums; color: #ccc; font-size:14px;}
+  .col-icon { width: 28px; text-align: center; font-size: 18px; }
+  .col-temp { width: 44px; text-align: right; font-weight: bold; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+  .col-uv { width: 36px; text-align: center; font-size: 11px; color: #f39c12; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 2px;}
+  .barwrap { flex: 1; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; height: 16px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
+  .bar { height: 100%; background: linear-gradient(90deg, #3fa9f5, #1976d2); transition: width 0.5s ease; }
+  .col-pct { width: 36px; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; }
+  
+  .w { font-size: 26px; }
+
+  /* SVGグラフ用 */
+  .graph-container { margin: 16px 0; padding-bottom: 16px; border-bottom: 1px solid var(--glass-bd); }
+  svg { width: 100%; height: 100px; overflow: visible; }
+  .graph-label { font-size: 10px; fill: var(--fg); text-anchor: middle; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ローディング状態 */
+  .loading { opacity: 0.5; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <select id="locationSelect">
+    <option value="35.561,139.716" selected>東京都 大田区</option>
+    <option value="35.6619,139.7024">東京都 渋谷区</option>
+    <option value="35.4437,139.6380">神奈川県 横浜市</option>
+    <option value="36.5551,139.8826">栃木県 宇都宮市</option>
+  </select>
+  <button id="btnGps" class="icon-btn" title="現在地を取得">📍</button>
+  <button id="btnRefresh" class="icon-btn" title="更新">🔄</button>
+</div>
+
+<div class="card" id="mainCard">
+  <div class="topline">
+    <h1 id="title">今日の天気</h1>
+    <div class="meta" id="updated">更新: --</div>
+  </div>
+
+  <div class="tabs">
+    <button id="tabToday" class="tab active" type="button">今日</button>
+    <button id="tabTomorrow" class="tab" type="button">明日</button>
+    <button id="tabWeekly" class="tab" type="button">週間</button>
+  </div>
+
+  <div class="now" id="nowBlock">
+    <div>
+      <div id="desc" class="meta">—</div>
+      <div id="hiLo" class="hiLo">最高 —°C / 最低 —°C</div>
+      <div class="meta" id="coordsDisplay">--</div>
+    </div>
+    <div class="big"><span id="temp">--</span>°C <span class="w" id="icon">—</span></div>
+  </div>
+
+  <div id="hiLoOnly" class="hiLo hide" style="margin-top:8px; font-size:16px;">最高 —°C / 最低 —°C</div>
+</div>
+
+<div class="card" id="listCard">
+  <h1 id="listTitle">降水確率と気温</h1>
+  
+  <div id="graphContainer" class="graph-container hide"></div>
+
+  <div id="list"></div>
+  <div class="meta" style="margin-top:8px" id="listFooter">単位: % / °C / UV (Open-Meteo)</div>
+</div>
+
+<div class="card hide" id="err" style="color:#ff7777; font-weight:bold;"></div>
+
+<script>
+(()=>{
+  const $ = id => document.getElementById(id);
+
+  // 要素の取得
+  const locationSelect = $("locationSelect"), btnGps = $("btnGps"), btnRefresh = $("btnRefresh");
+  const titleEl = $("title"), updatedEl = $("updated"), coordsDisplay = $("coordsDisplay");
+  const tabToday = $("tabToday"), tabTomorrow = $("tabTomorrow"), tabWeekly = $("tabWeekly");
+  const nowBlock = $("nowBlock"), hiLoOnly = $("hiLoOnly");
+  const tempEl = $("temp"), iconEl = $("icon"), descEl = $("desc"), hiLoEl = $("hiLo");
+  const listTitle = $("listTitle"), listEl = $("list"), listFooter = $("listFooter");
+  const graphContainer = $("graphContainer"), errEl = $("err");
+  const mainCard = $("mainCard"), listCard = $("listCard");
+
+  // 状態管理
+  let data = null;
+  let selectedTab = 0; // 0=今日, 1=明日, 2=週間
+  let currentLat = 35.561, currentLon = 139.716; // デフォルトは大田区
+  let locationName = "東京都 大田区";
+
+  // 天気コード変換
+  const WMAP = {
+    0:["☀️","快晴"], 1:["🌤","晴れ"], 2:["⛅","薄曇り"], 3:["☁️","くもり"],
+    45:["🌫","霧"], 48:["🌫","霧"],
+    51:["🌦","弱い霧雨"], 53:["🌦","霧雨"], 55:["🌦","強い霧雨"],
+    56:["🌧","着氷性霧雨"], 57:["🌧","強い着氷性霧雨"],
+    61:["🌧","弱い雨"], 63:["🌧","雨"], 65:["🌧","強い雨"],
+    66:["🌧","着氷性雨"], 67:["🌧","強い着氷性雨"],
+    71:["🌨","弱い雪"], 73:["🌨","雪"], 75:["🌨","大雪"],
+    77:["🌨","雪あられ"], 80:["🌦","にわか雨(弱)"], 81:["🌦","にわか雨"], 82:["⛈","にわか雨(強)"],
+    85:["🌨","にわか雪(弱)"], 86:["🌨","にわか雪(強)"],
+    95:["⛈","雷雨"], 96:["⛈","雷雨(雹)"], 99:["⛈","激しい雷雨(雹)"]
+  };
+
+  // ユーティリティ関数
+  function showErr(msg){ errEl.classList.remove("hide"); errEl.textContent = msg; }
+  function clearErr(){ errEl.classList.add("hide"); errEl.textContent=""; }
+  function pad2(n){ return String(n).padStart(2, "0"); }
+  function fmtHour(iso){ const d = new Date(iso); return pad2(d.getHours()) + ":00"; }
+  function getTempColor(temp) {
+    let hue = 240 - (temp * 7);
+    if (hue < 0) hue = 0; if (hue > 280) hue = 280;
+    return `hsl(${hue}, 80%, 70%)`;
+  }
+  function getDayName(iso) {
+    const days = ["日", "月", "火", "水", "木", "金", "土"];
+    return days[new Date(iso).getDay()];
+  }
+
+  // 動的背景の更新
+  function updateBackground(code) {
+    let bgVar = 'var(--bg-cloudy)';
+    if (code <= 2) bgVar = 'var(--bg-sunny)';
+    else if (code >= 51) bgVar = 'var(--bg-rainy)';
+    document.body.style.background = bgVar;
+  }
+
+  // APIデータ取得
+  async function fetchData(){
+    clearErr();
+    mainCard.classList.add("loading"); listCard.classList.add("loading");
+    titleEl.textContent = "データ取得中...";
+    
+    try {
+      const url = new URL("https://api.open-meteo.com/v1/forecast");
+      const params = {
+        latitude: currentLat, longitude: currentLon, timezone: "Asia/Tokyo",
+        current_weather: "true",
+        hourly: "precipitation_probability,temperature_2m,weathercode,uv_index",
+        daily: "weathercode,temperature_2m_max,temperature_2m_min"
+      };
+      url.search = new URLSearchParams(params).toString();
+      const r = await fetch(url);
+      if(!r.ok) throw new Error("天気データの取得に失敗しました");
+      data = await r.json();
+      
+      updateBackground(data.current_weather.weathercode);
+      renderUI();
+    } catch(e) {
+      showErr(e.message || "通信エラーが発生しました。");
+    } finally {
+      mainCard.classList.remove("loading"); listCard.classList.remove("loading");
+    }
+  }
+
+  // ヘッダー描画
+  function renderHeader(){
+    coordsDisplay.textContent = `${currentLat.toFixed(3)}, ${currentLon.toFixed(3)}`;
+    
+    if(selectedTab === 0){
+      titleEl.textContent = `${locationName}｜今日の天気`;
+      listTitle.textContent = "天気と降水確率・UV（現在時刻から）";
+      nowBlock.classList.remove("hide"); hiLoOnly.classList.add("hide");
+
+      const cw = data.current_weather;
+      const [ic, tx] = (WMAP[cw.weathercode] || ["❓","不明"]);
+      tempEl.textContent = Math.round(cw.temperature);
+      iconEl.textContent = ic;
+      descEl.textContent = `現在：${tx}／風 ${Math.round(cw.windspeed)}m/s`;
+      updatedEl.textContent = `更新: ${new Date(cw.time).toLocaleTimeString("ja-JP", {hour:'2-digit', minute:'2-digit'})}`;
+
+      const tmax = Math.round(data.daily.temperature_2m_max[0]);
+      const tmin = Math.round(data.daily.temperature_2m_min[0]);
+      hiLoEl.textContent = `最高 ${tmax}°C / 最低 ${tmin}°C`;
+      hiLoEl.style.color = getTempColor(tmax);
+    } else if(selectedTab === 1){
+      titleEl.textContent = `${locationName}｜明日の天気`;
+      listTitle.textContent = "天気と降水確率・UV（明日 0-23時）";
+      nowBlock.classList.add("hide"); hiLoOnly.classList.remove("hide");
+
+      const tmax = Math.round(data.daily.temperature_2m_max[1]);
+      const tmin = Math.round(data.daily.temperature_2m_min[1]);
+      hiLoOnly.textContent = `最高 ${tmax}°C / 最低 ${tmin}°C`;
+      hiLoOnly.style.color = getTempColor(tmax);
+    } else {
+      titleEl.textContent = `${locationName}｜週間予報`;
+      listTitle.textContent = "向こう7日間の天気と気温推移";
+      nowBlock.classList.add("hide"); hiLoOnly.classList.add("hide");
+    }
+  }
+
+  // リスト描画（今日・明日）
+  function renderHourlyList() {
+    graphContainer.classList.add("hide");
+    listFooter.textContent = "単位: % / °C / UV (Open-Meteo)";
+    
+    const base = new Date(); base.setDate(base.getDate() + selectedTab);
+    const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0,0,0);
+    const end   = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 23,59,59,999);
+    
+    const { time: times, precipitation_probability: pops, temperature_2m: temps, weathercode: codes, uv_index: uvs } = data.hourly;
+    const nowHour = new Date().getHours();
+    let delay = 0;
+
+    for(let i=0; i<times.length; i++){
+      const t = new Date(times[i]);
+      if(t < start || t > end) continue;
+      if(selectedTab === 0 && t.getHours() < nowHour) continue;
+
+      const v = (pops[i] ?? 0);
+      const tempVal = temps[i];
+      const uv = Math.round(uvs[i] || 0);
+      const [ic] = WMAP[codes[i]] || ["❓","不明"];
+      
+      const row = document.createElement("div");
+      row.className = "row";
+      row.style.animationDelay = `${delay}ms`; delay += 30;
+
+      // UV指数の表示（0の場合は薄く）
+      const uvHtml = uv > 0 ? `<div class="col-uv">UV ${uv}</div>` : `<div class="col-uv" style="opacity:0.3">UV 0</div>`;
+
+      row.innerHTML = `
+        <div class="col-time">${fmtHour(times[i])}</div>
+        <div class="col-icon">${ic}</div>
+        <div class="col-temp" style="color:${getTempColor(tempVal)}">${Math.round(tempVal)}°</div>
+        ${uvHtml}
+        <div class="barwrap"><div class="bar" style="width:${v}%;"></div></div>
+        <div class="col-pct">${v}%</div>
+      `;
+      listEl.appendChild(row);
+    }
+  }
+
+  // SVGグラフと週間リストの描画
+  function renderWeekly() {
+    graphContainer.classList.remove("hide");
+    listFooter.textContent = "単位: °C (Open-Meteo)";
+    const { time, weathercode, temperature_2m_max: tMax, temperature_2m_min: tMin } = data.daily;
+    
+    // --- SVGグラフ生成 ---
+    const maxT = Math.max(...tMax) + 2;
+    const minT = Math.min(...tMin) - 2;
+    const range = maxT - minT;
+    const w = 300, h = 80;
+    const stepX = w / (time.length - 1);
+    
+    let ptsMax = "", ptsMin = "";
+    let circles = "";
+
+    time.forEach((t, i) => {
+      const x = i * stepX;
+      const yMax = h - ((tMax[i] - minT) / range) * h;
+      const yMin = h - ((tMin[i] - minT) / range) * h;
+      
+      ptsMax += `${x},${yMax} `;
+      ptsMin += `${x},${yMin} `;
+      
+      circles += `<circle cx="${x}" cy="${yMax}" r="3" fill="#ff7675" />
+                  <circle cx="${x}" cy="${yMin}" r="3" fill="#74b9ff" />
+                  <text x="${x}" y="${yMax - 8}" class="graph-label" fill="#ff7675">${Math.round(tMax[i])}°</text>
+                  <text x="${x}" y="${yMin + 14}" class="graph-label" fill="#74b9ff">${Math.round(tMin[i])}°</text>`;
+    });
+
+    graphContainer.innerHTML = `
+      <svg viewBox="-10 -20 ${w+20} ${h+40}">
+        <polyline points="${ptsMax}" fill="none" stroke="#ff7675" stroke-width="2" />
+        <polyline points="${ptsMin}" fill="none" stroke="#74b9ff" stroke-width="2" />
+        ${circles}
+      </svg>
+    `;
+
+    // --- 週間リスト生成 ---
+    let delay = 0;
+    for(let i=0; i<time.length; i++) {
+      const d = new Date(time[i]);
+      const dateStr = `${d.getMonth()+1}/${d.getDate()}(${getDayName(time[i])})`;
+      const [ic, desc] = WMAP[weathercode[i]] || ["❓","不明"];
+      
+      const row = document.createElement("div");
+      row.className = "row";
+      row.style.animationDelay = `${delay}ms`; delay += 30;
+      
+      row.innerHTML = `
+        <div class="col-time" style="width:70px;">${dateStr}</div>
+        <div class="col-icon" style="flex:1; text-align:left;">${ic} <span style="font-size:12px; color:var(--mut);">${desc}</span></div>
+        <div class="col-temp" style="color:#ff7675;">${Math.round(tMax[i])}°</div>
+        <div class="col-temp" style="color:#74b9ff;">${Math.round(tMin[i])}°</div>
+      `;
+      listEl.appendChild(row);
+    }
+  }
+
+  function renderUI() {
+    if(!data) return;
+    listEl.innerHTML = "";
+    renderHeader();
+    if(selectedTab === 2) renderWeekly();
+    else renderHourlyList();
+  }
+
+  function setTab(idx){
+    selectedTab = idx;
+    tabToday.classList.toggle("active", idx===0);
+    tabTomorrow.classList.toggle("active", idx===1);
+    tabWeekly.classList.toggle("active", idx===2);
+    renderUI();
+  }
+
+  // エリア変更イベント
+  locationSelect.addEventListener("change", (e) => {
+    const [lat, lon] = e.target.value.split(",");
+    currentLat = parseFloat(lat); currentLon = parseFloat(lon);
+    locationName = e.target.options[e.target.selectedIndex].text;
+    fetchData();
+  });
+
+  // 現在地(GPS)取得イベント
+  btnGps.addEventListener("click", () => {
+    if (!navigator.geolocation) return alert("お使いのブラウザは位置情報に対応していません");
+    btnGps.textContent = "⏳";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        currentLat = pos.coords.latitude; currentLon = pos.coords.longitude;
+        locationName = "現在地";
+        
+        // selectの選択を外す
+        locationSelect.selectedIndex = -1;
+        
+        // selectの中に「現在地」オプションがなければ追加して選択
+        let gpsOpt = Array.from(locationSelect.options).find(o => o.text === "現在地");
+        if(!gpsOpt) {
+          gpsOpt = document.createElement("option");
+          gpsOpt.text = "現在地";
+          locationSelect.add(gpsOpt, locationSelect.options[0]);
+        }
+        gpsOpt.value = `${currentLat},${currentLon}`;
+        gpsOpt.selected = true;
+
+        btnGps.textContent = "📍";
+        fetchData();
+      },
+      (err) => {
+        alert("位置情報の取得に失敗しました。権限を確認してください。");
+        btnGps.textContent = "📍";
+      }
+    );
+  });
+
+  btnRefresh.addEventListener("click", fetchData);
+  tabToday.addEventListener("click", ()=> setTab(0));
+  tabTomorrow.addEventListener("click", ()=> setTab(1));
+  tabWeekly.addEventListener("click", ()=> setTab(2));
+
+  // 初回起動
+  fetchData();
+})();
+</script>
+</body>
+</html>
