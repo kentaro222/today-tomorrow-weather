@@ -27,17 +27,17 @@
     </section>
     <div class="controls" aria-label="地域と更新操作">
       <label class="sr-only" for="locationSelect">地域を選択</label>
-      <select id="locationSelect" aria-label="地域を選択">
-        <option value="35.561,139.716" data-name="東京都 大田区" selected>東京都 大田区</option>
-        <option value="35.6619,139.7024" data-name="東京都 渋谷区">東京都 渋谷区</option>
-        <option value="35.4437,139.6380" data-name="神奈川県 横浜市">神奈川県 横浜市</option>
-        <option value="36.5551,139.8826" data-name="栃木県 宇都宮市">栃木県 宇都宮市</option>
+      <select id="locationSelect" aria-label="地域を選択" disabled>
+        <option value="" disabled selected>都市を選択してください</option>
       </select>
       <button id="btnGps" class="icon-btn" type="button" aria-label="現在地を取得" title="現在地を取得">📍</button>
-      <button id="btnRefresh" class="icon-btn" type="button" aria-label="天気を更新" title="更新">🔄</button>
+      <button id="btnRefresh" disabled class="icon-btn" type="button" aria-label="天気を更新" title="更新">🔄</button>
     </div>
 
-    <section class="card" id="mainCard" aria-labelledby="title">
+    <section class="card empty-state" id="emptyState">
+      都市を検索して選択するか、📍ボタンで現在地を取得してください。
+    </section>
+    <section class="card hide" id="mainCard" aria-labelledby="title">
       <div class="topline">
         <h1 id="title">今日の天気</h1>
         <div class="meta" id="updated">更新: --</div>
@@ -66,7 +66,7 @@
       </div>
     </section>
 
-    <section class="card" id="listCard" aria-labelledby="listTitle">
+    <section class="card hide" id="listCard" aria-labelledby="listTitle">
       <h2 id="listTitle">降水確率と気温</h2>
       <div id="graphContainer" class="graph-container hide" aria-label="気温推移グラフ"></div>
       <div id="list"></div>

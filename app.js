@@ -15,15 +15,15 @@
     tabToday: $("tabToday"), tabTomorrow: $("tabTomorrow"), tabWeekly: $("tabWeekly"),
     nowBlock: $("nowBlock"), hiLoOnly: $("hiLoOnly"), temp: $("temp"), icon: $("icon"), desc: $("desc"), hiLo: $("hiLo"),
     listTitle: $("listTitle"), list: $("list"), listFooter: $("listFooter"), graphContainer: $("graphContainer"),
-    err: $("err"), errText: $("errText"), mainCard: $("mainCard"), listCard: $("listCard")
+    err: $("err"), errText: $("errText"), mainCard: $("mainCard"), listCard: $("listCard"), emptyState: $("emptyState")
   };
 
   const state = {
     data: null,
     selectedTab: 0,
-    lat: 35.561,
-    lon: 139.716,
-    locationName: "東京都 大田区",
+    lat: null,
+    lon: null,
+    locationName: "",
     isGps: false,
     abortController: null
   };
@@ -59,6 +59,7 @@
       option.dataset.saved = "true";
       els.locationSelect.add(option);
     }
+    els.locationSelect.disabled = false;
     return option;
   }
 
@@ -89,7 +90,7 @@
       state.lat = saved.lat;
       state.lon = saved.lon;
       state.locationName = saved.name;
-    } catch (_) {} // 保存データが壊れていても既定の都市で起動
+    } catch (_) {} // 保存データが壊れていても都市未選択で起動
   }
 
   async function searchCities(event) {
@@ -131,6 +132,10 @@
   }
 
   async function fetchData() {
+    if (!Number.isFinite(state.lat) || !Number.isFinite(state.lon)) return;
+    els.emptyState.classList.add("hide");
+    els.mainCard.classList.remove("hide");
+    els.listCard.classList.remove("hide");
     clearError();
     setLoading(true);
     els.title.textContent = "データ取得中...";
@@ -349,6 +354,7 @@
         gpsOption.dataset.name = state.locationName;
         gpsOption.textContent = `${state.locationName}（GPS）`;
         gpsOption.selected = true;
+        els.locationSelect.disabled = false;
         await fetchData();
       } catch (error) {
         showError(error.message || "現在地の処理中にエラーが発生しました。");
