@@ -131,7 +131,7 @@
       });
     } catch (error) {
       if (controller.signal.aborted) return;
-      els.searchStatus.textContent = "都市を検索できませんでした。通信状況を確認して、もう一度検索してください。";
+      els.searchStatus.textContent = error.message || "都市を検索できませんでした。通信状況を確認して、もう一度検索してください。";
     }
   }
 

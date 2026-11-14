@@ -4,6 +4,41 @@
   const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
   const REVERSE_GEOCODE_URL = "https://api.bigdatacloud.net/data/reverse-geocode-client";
 
+  async function fetchJson(url, signal, label) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      signal?.addEventListener("abort", cancel, { once: true });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, 12000);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) {
+          if (attempt === 0 && [502, 503, 504].includes(response.status)) continue;
+          throw new Error(`${label}に失敗しました（HTTP ${response.status}）。少し待ってから再試行してください。`);
+        }
+        return await response.json();
+      } catch (error) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const networkError = error instanceof TypeError || timedOut;
+        if (networkError && attempt === 0) continue;
+        if (networkError) {
+          throw new Error(timedOut
+            ? `${label}がタイムアウトしました。通信状況を確認して再試行してください。`
+            : `${label}に失敗しました。Wi-Fi・モバイル通信や、VPN・コンテンツブロッカーの設定を確認して再試行してください。`);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
+      }
+    }
+  }
+
   async function fetchForecast(lat, lon, signal) {
     const url = new URL(FORECAST_URL);
     const params = {
@@ -18,11 +53,7 @@
     };
     url.search = new URLSearchParams(params).toString();
 
-    const response = await fetch(url, { signal });
-    if (!response.ok) {
-      throw new Error(`天気データの取得に失敗しました（HTTP ${response.status}）`);
-    }
-    return response.json();
+    return fetchJson(url, signal, "天気データの取得");
   }
 
   async function searchCities(query, signal) {
@@ -33,9 +64,7 @@
     const pages = await Promise.all(queries.map(async term => {
       const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
       url.search = new URLSearchParams({ name: term, count: "20", language: "ja", countryCode: "JP" });
-      const response = await fetch(url, { signal });
-      if (!response.ok) throw new Error(`都市の検索に失敗しました（HTTP ${response.status}）`);
-      return (await response.json()).results || [];
+      return (await fetchJson(url, signal, "都市の検索")).results || [];
     }));
     const unique = new Map();
     pages.flat().filter(p => p.country_code === "JP" && /^(PPL|ADM)/.test(p.feature_code || "") &&
