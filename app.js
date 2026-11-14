@@ -4,7 +4,12 @@
   const $ = id => document.getElementById(id);
   const STORAGE_KEY = "weatherTool.lastPresetLocation.v2";
 
+  const CITIES_KEY = "weatherTool.savedCities.v1";
+  let searchController;
+
   const els = {
+    searchForm: $("citySearchForm"), cityQuery: $("cityQuery"), cityResults: $("cityResults"),
+    searchStatus: $("searchStatus"), storageStatus: $("storageStatus"),
     locationSelect: $("locationSelect"), btnGps: $("btnGps"), btnRefresh: $("btnRefresh"), btnRetry: $("btnRetry"),
     title: $("title"), updated: $("updated"), coordsDisplay: $("coordsDisplay"),
     tabToday: $("tabToday"), tabTomorrow: $("tabTomorrow"), tabWeekly: $("tabWeekly"),
@@ -39,31 +44,90 @@
     els.errText.textContent = "";
   }
 
+  function validCity(city) {
+    return city && Number.isFinite(city.lat) && Math.abs(city.lat) <= 90 &&
+      Number.isFinite(city.lon) && Math.abs(city.lon) <= 180 &&
+      typeof city.name === "string" && city.name.trim().length > 0 && city.name.length <= 200;
+  }
+
+  function cityOption(city) {
+    const value = `${city.lat},${city.lon}`;
+    let option = Array.from(els.locationSelect.options).find(opt => opt.value === value && opt.dataset.gps !== "true");
+    if (!option) {
+      option = new Option(city.name, value);
+      option.dataset.name = city.name;
+      option.dataset.saved = "true";
+      els.locationSelect.add(option);
+    }
+    return option;
+  }
+
   function savePreset() {
-    if (state.isGps) return; // 正確なGPS座標はlocalStorageへ保存しない
+    if (state.isGps) return; // GPS座標は保存しない
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        lat: state.lat,
-        lon: state.lon,
-        name: state.locationName
-      }));
-    } catch (_) {}
+      const cities = Array.from(els.locationSelect.options)
+        .filter(opt => opt.dataset.saved === "true")
+        .map(opt => {
+          const [lat, lon] = opt.value.split(",").map(Number);
+          return { lat, lon, name: opt.dataset.name };
+        });
+      localStorage.setItem(CITIES_KEY, JSON.stringify(cities));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ lat: state.lat, lon: state.lon, name: state.locationName }));
+      els.storageStatus.textContent = "選択した都市を保存しました。次回もこの都市を表示します。";
+    } catch (_) {
+      els.storageStatus.textContent = "都市を保存できませんでした。ブラウザのストレージ設定を確認してください。";
+    }
   }
 
   function restorePreset() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (!Number.isFinite(saved.lat) || !Number.isFinite(saved.lon) || !saved.name) return;
-
-      const option = Array.from(els.locationSelect.options).find(opt => opt.dataset.name === saved.name);
-      if (!option) return;
-      option.selected = true;
+      const cities = JSON.parse(localStorage.getItem(CITIES_KEY) || "[]");
+      if (Array.isArray(cities)) cities.filter(validCity).slice(0, 100).forEach(cityOption);
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!validCity(saved)) return;
+      cityOption(saved).selected = true;
       state.lat = saved.lat;
       state.lon = saved.lon;
       state.locationName = saved.name;
-    } catch (_) {}
+    } catch (_) {} // 保存データが壊れていても既定の都市で起動
+  }
+
+  async function searchCities(event) {
+    event.preventDefault();
+    if (searchController) searchController.abort();
+    const controller = new AbortController();
+    searchController = controller;
+    els.cityResults.replaceChildren();
+    const query = els.cityQuery.value.normalize("NFKC").trim();
+    if (query.length < 2) {
+      els.searchStatus.textContent = "地名を2文字以上で入力してください。";
+      return;
+    }
+    els.searchStatus.textContent = "検索中…";
+    try {
+      const cities = await WeatherAPI.searchCities(query, controller.signal);
+      if (controller.signal.aborted) return;
+      els.searchStatus.textContent = cities.length ? `${cities.length}件見つかりました。都市を選んでください。` :
+        "都市が見つかりませんでした。「横浜市」のように市区町村名でお試しください。";
+      cities.forEach(city => {
+        const li = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = city.name;
+        button.addEventListener("click", () => {
+          cityOption(city).selected = true;
+          onPresetChange({ target: els.locationSelect });
+          els.cityResults.replaceChildren();
+          els.searchStatus.textContent = `${city.name}を選択しました。`;
+          els.locationSelect.focus();
+        });
+        li.append(button);
+        els.cityResults.append(li);
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      els.searchStatus.textContent = "都市を検索できませんでした。通信状況を確認して、もう一度検索してください。";
+    }
   }
 
   async function fetchData() {
@@ -72,10 +136,13 @@
     els.title.textContent = "データ取得中...";
 
     if (state.abortController) state.abortController.abort();
-    state.abortController = new AbortController();
+    const controller = new AbortController();
+    state.abortController = controller;
 
     try {
-      state.data = await WeatherAPI.fetchForecast(state.lat, state.lon, state.abortController.signal);
+      const data = await WeatherAPI.fetchForecast(state.lat, state.lon, controller.signal);
+      if (controller.signal.aborted) return;
+      state.data = data;
       WeatherUI.applyBackground(state.data.current_weather.weathercode, state.data.current_weather.is_day);
       renderUI();
     } catch (error) {
@@ -83,7 +150,7 @@
         showError(error.message || "通信エラーが発生しました。ネットワーク接続を確認してください。");
       }
     } finally {
-      setLoading(false);
+      if (state.abortController === controller) setLoading(false);
     }
   }
 
@@ -239,7 +306,7 @@
     state.lat = lat;
     state.lon = lon;
     state.locationName = option.dataset.name || option.textContent.trim();
-    state.isGps = false;
+    state.isGps = option.dataset.gps === "true";
     savePreset();
     fetchData();
   }
@@ -301,6 +368,12 @@
   }
 
   function bindEvents() {
+    els.searchForm.addEventListener("submit", searchCities);
+    els.cityQuery.addEventListener("input", () => {
+      if (searchController) searchController.abort();
+      els.cityResults.replaceChildren();
+      els.searchStatus.textContent = "";
+    });
     els.locationSelect.addEventListener("change", onPresetChange);
     els.btnGps.addEventListener("click", getGpsLocation);
     els.btnRefresh.addEventListener("click", fetchData);

@@ -158,3 +158,20 @@ svg.weather-graph { width: 100%; min-width: 320px; height: 150px; overflow: visi
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* 都市検索 */
+.city-search label { display: block; margin-bottom: 6px; font-weight: 700; }
+.search-fields { display: flex; gap: 8px; }
+.search-fields input { flex: 1; min-width: 0; }
+.search-fields input, .search-btn, .city-results button {
+  font: inherit; color: var(--fg); background: rgba(8,16,28,0.48);
+  border: 1px solid var(--glass-bd); border-radius: 9px; padding: 9px 12px;
+}
+.search-btn, .city-results button { cursor: pointer; }
+.search-btn:hover, .city-results button:hover { background: rgba(255,255,255,0.18); }
+input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.city-search p { margin: 8px 0 0; }
+.city-search p:empty { display: none; }
+.city-results { list-style: none; padding: 0; margin: 8px 0 0; max-height: 240px; overflow-y: auto; }
+.city-results:empty { display: none; }
+.city-results button { width: 100%; text-align: left; margin-bottom: 4px; }

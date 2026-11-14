@@ -25,6 +25,27 @@
     return response.json();
   }
 
+  async function searchCities(query, signal) {
+    const name = query.normalize("NFKC").trim();
+    if (name.length < 2) return [];
+    // 「横浜」でも「横浜市」が見つかるよう自治体名でも検索。
+    const queries = /[市区町村]$/.test(name) ? [name] : [name, `${name}市`];
+    const pages = await Promise.all(queries.map(async term => {
+      const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
+      url.search = new URLSearchParams({ name: term, count: "20", language: "ja", countryCode: "JP" });
+      const response = await fetch(url, { signal });
+      if (!response.ok) throw new Error(`都市の検索に失敗しました（HTTP ${response.status}）`);
+      return (await response.json()).results || [];
+    }));
+    const unique = new Map();
+    pages.flat().filter(p => p.country_code === "JP" && /^(PPL|ADM)/.test(p.feature_code || "") &&
+      Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
+      .sort((a, b) => (b.population || 0) - (a.population || 0))
+      .forEach(p => unique.set(p.id, { lat: p.latitude, lon: p.longitude,
+        name: [...new Set([p.admin1, p.name].filter(Boolean))].join(" ") }));
+    return [...unique.values()].slice(0, 20);
+  }
+
   async function reverseGeocode(lat, lon, signal) {
     try {
       const url = new URL(REVERSE_GEOCODE_URL);
@@ -48,5 +69,5 @@
     }
   }
 
-  global.WeatherAPI = { fetchForecast, reverseGeocode };
+  global.WeatherAPI = { fetchForecast, reverseGeocode, searchCities };
 })(window);

@@ -12,6 +12,19 @@
 </head>
 <body class="weather-cloudy is-day">
   <main class="app-shell" aria-live="polite">
+    <section class="card city-search" aria-label="都市の検索">
+      <form id="citySearchForm" role="search">
+        <label for="cityQuery">日本の都市を検索</label>
+        <div class="search-fields">
+          <input id="cityQuery" type="search" placeholder="例：横浜、札幌市、大田区" minlength="2" maxlength="100" required aria-describedby="searchHint" />
+          <button class="search-btn" type="submit">検索</button>
+        </div>
+      </form>
+      <p class="meta" id="searchHint">地名を2文字以上で入力してください。選んだ都市はこのブラウザに保存されます。</p>
+      <p class="meta" id="searchStatus" role="status"></p>
+      <ul id="cityResults" class="city-results" aria-label="都市の検索結果"></ul>
+      <p class="meta" id="storageStatus" role="status"></p>
+    </section>
     <div class="controls" aria-label="地域と更新操作">
       <label class="sr-only" for="locationSelect">地域を選択</label>
       <select id="locationSelect" aria-label="地域を選択">
