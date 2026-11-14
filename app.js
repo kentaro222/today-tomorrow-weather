@@ -6,6 +6,8 @@
 
   const CITIES_KEY = "weatherTool.savedCities.v1";
   let searchController;
+  let searchQuery = "";
+  let isComposing = false;
 
   const els = {
     searchForm: $("citySearchForm"), cityQuery: $("cityQuery"), cityResults: $("cityResults"),
@@ -95,11 +97,13 @@
 
   async function searchCities(event) {
     event.preventDefault();
+    if (isComposing) return;
     if (searchController) searchController.abort();
     const controller = new AbortController();
     searchController = controller;
     els.cityResults.replaceChildren();
     const query = els.cityQuery.value.normalize("NFKC").trim();
+    searchQuery = query;
     if (query.length < 2) {
       els.searchStatus.textContent = "地名を2文字以上で入力してください。";
       return;
@@ -375,7 +379,17 @@
 
   function bindEvents() {
     els.searchForm.addEventListener("submit", searchCities);
+    els.cityQuery.addEventListener("compositionstart", () => { isComposing = true; });
+    els.cityQuery.addEventListener("compositionend", () => { isComposing = false; });
+    els.cityQuery.addEventListener("keydown", event => {
+      // IMEの確定Enterでフォームを送信しない（SafariのkeyCode 229も対象）。
+      if (event.key === "Enter" && (isComposing || event.isComposing || event.keyCode === 229)) {
+        event.preventDefault();
+      }
+    });
     els.cityQuery.addEventListener("input", () => {
+      // IME確定や検索入力欄の再通知で値が変わらない場合は候補を維持する。
+      if (els.cityQuery.value.normalize("NFKC").trim() === searchQuery) return;
       if (searchController) searchController.abort();
       els.cityResults.replaceChildren();
       els.searchStatus.textContent = "";
